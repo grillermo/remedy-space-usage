@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,9 @@ func main() {
 }
 
 func run() error {
+	dryRun := flag.Bool("dry-run", false, "scan and choose as usual, then show what would happen without deleting anything")
+	flag.Parse()
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
@@ -37,6 +42,10 @@ func run() error {
 	chosen, err := pick(scanner)
 	if err != nil || len(chosen) == 0 {
 		return err
+	}
+	if *dryRun {
+		dryRunReport(os.Stdout, chosen, systemGuards())
+		return nil
 	}
 	if !review(chosen) {
 		fmt.Println("Nothing deleted.")
@@ -80,18 +89,39 @@ func pick(scanner *Scanner) ([]*Item, error) {
 	return scanner.selected(keys), nil
 }
 
-func review(items []*Item) bool {
+// printPlan lists what each item would do and returns their combined size.
+func printPlan(w io.Writer, items []*Item) int64 {
 	var total int64
 	for _, it := range items {
 		total += it.SizeKB
-		fmt.Printf("\n%s  (%s)\n", it.Label, it.sizeLabel())
+		fmt.Fprintf(w, "\n%s  (%s)\n", it.Label, it.sizeLabel())
 		for _, line := range describe(it) {
-			fmt.Println("  " + line)
+			fmt.Fprintln(w, "  "+line)
 		}
 	}
+	return total
+}
+
+func review(items []*Item) bool {
+	total := printPlan(os.Stdout, items)
 	fmt.Printf("\nThis permanently deletes up to %s. Continue? [y/N] ", formatSize(total))
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	return strings.EqualFold(strings.TrimSpace(answer), "y")
+}
+
+// dryRunReport shows the same plan as review, and which items would be skipped
+// right now. It only reads: nothing here deletes or runs a cleanup.
+func dryRunReport(w io.Writer, items []*Item, g guards) {
+	var active []*Item
+	for _, it := range items {
+		if reason := g.blockReason(it); reason != "" {
+			fmt.Fprintf(w, "SKIP  %s: %s\n", it.Label, reason)
+			continue
+		}
+		active = append(active, it)
+	}
+	total := printPlan(w, active)
+	fmt.Fprintf(w, "\nDry run: nothing was deleted. A real run would delete up to %s.\n", formatSize(total))
 }
 
 func execute(items []*Item) {
