@@ -96,3 +96,12 @@ func TestCatalogGuardsRunningApps(t *testing.T) {
 		t.Errorf("chrome app guard = %q", got)
 	}
 }
+
+func TestNeutralDirIsWritable(t *testing.T) {
+	f, err := os.CreateTemp(neutralDir, "probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	os.Remove(f.Name())
+}

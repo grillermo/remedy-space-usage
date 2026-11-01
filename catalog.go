@@ -9,7 +9,8 @@ import (
 
 // neutralDir is where tools run. From inside a project, a tool can react to that
 // project's settings: `go env` may download the Go toolchain its go.mod asks for.
-const neutralDir = "/"
+// It must be writable, because pnpm fails when its working folder isn't.
+var neutralDir = os.TempDir()
 
 // outputFunc runs a command and returns its trimmed stdout. An error means the
 // tool isn't usable here, so its item is left out.
