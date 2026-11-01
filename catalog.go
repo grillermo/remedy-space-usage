@@ -7,12 +7,18 @@ import (
 	"strings"
 )
 
+// neutralDir is where tools run. From inside a project, a tool can react to that
+// project's settings: `go env` may download the Go toolchain its go.mod asks for.
+const neutralDir = "/"
+
 // outputFunc runs a command and returns its trimmed stdout. An error means the
 // tool isn't usable here, so its item is left out.
 type outputFunc func(name string, args ...string) (string, error)
 
 func systemOutput(name string, args ...string) (string, error) {
-	out, err := exec.Command(name, args...).Output()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = neutralDir
+	out, err := cmd.Output()
 	return strings.TrimSpace(string(out)), err
 }
 

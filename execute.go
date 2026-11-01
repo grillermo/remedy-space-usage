@@ -49,7 +49,9 @@ func perform(it *Item) error {
 		}
 	}
 	for _, c := range it.Commands {
-		if out, err := exec.Command(c[0], c[1:]...).CombinedOutput(); err != nil {
+		cmd := exec.Command(c[0], c[1:]...)
+		cmd.Dir = neutralDir
+		if out, err := cmd.CombinedOutput(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w: %s", strings.Join(c, " "), err, strings.TrimSpace(string(out))))
 		}
 	}
