@@ -42,7 +42,8 @@ func artifactItem(path, project string) *Item {
 // discover walks the projects folder for build artifacts and Rails logs.
 func discover(root string) []*Item {
 	var items []*Item
-	logs := &Item{Key: "rails-logs", Section: sectionLogs, Label: "Rails dev/test logs", Ticked: true}
+	logs := &Item{Key: "rails-logs", Section: sectionLogs, Label: "Rails dev/test logs", Ticked: true,
+		Location: filepath.Join(root, "**/log")}
 
 	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

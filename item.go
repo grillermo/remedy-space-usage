@@ -14,6 +14,9 @@ type Item struct {
 	Section string
 	Label   string
 	Detail  string
+	// Location identifies the item across runs, for remembering its tick. Only
+	// set it when location() would otherwise change from run to run.
+	Location string
 	// Ticked is the row's default. It is sent to chicle only once; see rowsFor.
 	Ticked bool
 
@@ -32,6 +35,18 @@ type Item struct {
 
 	SizeKB   int64
 	Measured bool
+}
+
+// location is the item's identity across runs. Items with no path, such as
+// unavailable simulators, are identified by their command.
+func (i *Item) location() string {
+	if i.Location != "" {
+		return i.Location
+	}
+	if len(i.SizePaths) > 0 {
+		return i.SizePaths[0]
+	}
+	return i.Detail
 }
 
 func (i *Item) sizeLabel() string {

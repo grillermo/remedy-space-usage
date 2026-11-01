@@ -76,6 +76,9 @@ func TestCatalogCleanMyMacItems(t *testing.T) {
 	if got := find(items, "shell-snapshots").App; got != "claude" {
 		t.Errorf("shell-snapshots app guard = %q", got)
 	}
+	if got := find(items, "container-caches").location(); !strings.HasSuffix(got, "Library/Containers/*/Data/Library/Caches") {
+		t.Errorf("container caches location must not depend on which apps exist: %q", got)
+	}
 	dirs := find(items, "container-caches").EmptyDirs
 	if len(dirs) != 1 || !strings.Contains(dirs[0], "com.example.app") {
 		t.Errorf("container caches must leave out Safari, which has its own row: %v", dirs)

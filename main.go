@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grillermo/chicle"
 )
 
@@ -21,6 +22,7 @@ func main() {
 
 func run() error {
 	dryRun := flag.Bool("dry-run", false, "scan and choose as usual, then show what would happen without deleting anything")
+	useDefaults := flag.Bool("defaults", false, "start from the built-in ticks instead of your remembered selection")
 	flag.Parse()
 
 	home, err := os.UserHomeDir()
@@ -28,7 +30,18 @@ func run() error {
 		return err
 	}
 
+	path := memoryPath(home)
+	memory, err := loadMemory(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "remedy-space-usage: ignoring remembered selection:", err)
+	}
+	starting := memory
+	if *useDefaults {
+		starting = Memory{}
+	}
+
 	items := catalog(home, systemOutput)
+	starting.apply(items)
 	scanner := newScanner(items, func() []*Item {
 		var claimed []string
 		for _, it := range items {
@@ -36,12 +49,21 @@ func run() error {
 		}
 		found := discover(filepath.Join(home, "c"))
 		found = append(found, largeEntries(filepath.Join(home, "Library/Caches"), claimed)...)
-		return append(found, largeEntries(filepath.Join(home, ".cache"), claimed)...)
+		found = append(found, largeEntries(filepath.Join(home, ".cache"), claimed)...)
+		starting.apply(found)
+		return found
 	})
 
-	chosen, err := pick(scanner)
-	if err != nil || len(chosen) == 0 {
+	chosen, ticked, err := pick(scanner)
+	if err != nil {
 		return err
+	}
+	scanner.remember(ticked, memory)
+	if err := memory.save(path); err != nil {
+		fmt.Fprintln(os.Stderr, "remedy-space-usage: couldn't remember selection:", err)
+	}
+	if len(chosen) == 0 {
+		return nil
 	}
 	if *dryRun {
 		dryRunReport(os.Stdout, chosen, systemGuards())
@@ -55,10 +77,13 @@ func run() error {
 	return nil
 }
 
-func pick(scanner *Scanner) ([]*Item, error) {
+// pick returns the items to clean, nil if you quit, and the row keys ticked when
+// the list closed, whichever way it closed. chicle.Run reports no ticks on a
+// quit, so this runs the chicle model directly.
+func pick(scanner *Scanner) ([]*Item, map[string]bool, error) {
 	initial := scanner.snapshot()
-	keys := map[string]bool{}
-	result, err := chicle.Run(chicle.Config{
+	scanner.markApplied(initial)
+	program := tea.NewProgram(chicle.New(chicle.Config{
 		Title:       "Free up space: enter ticks, tab reaches the buttons, ctrl+d cleans (once the scan ends)",
 		MultiSelect: true,
 		NoCycle:     true,
@@ -74,19 +99,26 @@ func pick(scanner *Scanner) ([]*Item, error) {
 					if len(sel.Ticked) == 0 {
 						return chicle.Outcome{Status: "Nothing ticked"}
 					}
-					for _, r := range sel.Ticked {
-						keys[r.Key] = true
-					}
 					return chicle.Outcome{Result: "clean", Done: true}
 				},
 			},
 			{Label: "Quit"},
 		},
-	})
-	if err != nil || result != "clean" {
-		return nil, err
+	}), tea.WithAltScreen())
+
+	final, err := program.Run()
+	if err != nil {
+		return nil, nil, err
 	}
-	return scanner.selected(keys), nil
+	model := final.(chicle.Model)
+	ticked := map[string]bool{}
+	for _, r := range model.Selection().Ticked {
+		ticked[r.Key] = true
+	}
+	if model.Result() != "clean" {
+		return nil, ticked, nil
+	}
+	return scanner.selected(ticked), ticked, nil
 }
 
 // printPlan lists what each item would do and returns their combined size.

@@ -63,6 +63,7 @@ func catalog(home string, output outputFunc) []*Item {
 	if dirs := containerCaches(home); len(dirs) > 0 {
 		item := dirCache("container-caches", "App container caches", "", true, dirs...)
 		item.Detail = filepath.Join(home, "Library/Containers/*/Data/Library/Caches")
+		item.Location = item.Detail
 		items = append(items, item)
 	}
 	tmp := filepath.Clean(os.TempDir())

@@ -18,6 +18,11 @@ type Scanner struct {
 	sent     map[string]bool
 	discover func() []*Item
 	done     atomic.Bool
+
+	// applied holds row keys the picker has certainly received, and accepted
+	// those of the latest send. See send.
+	applied  map[string]bool
+	accepted map[string]bool
 }
 
 func newScanner(items []*Item, discover func() []*Item) *Scanner {
@@ -32,7 +37,7 @@ func (s *Scanner) finished() bool { return s.done.Load() }
 func (s *Scanner) rows() []chicle.Row {
 	var rows []chicle.Row
 	for _, it := range s.items {
-		if it.Measured && (it.SizeKB == 0 || it.SizeKB < it.MinSizeKB) {
+		if it.hidden() {
 			continue
 		}
 		rows = append(rows, chicle.Row{
@@ -44,6 +49,56 @@ func (s *Scanner) rows() []chicle.Row {
 		s.sent[it.Key] = true
 	}
 	return rows
+}
+
+func (it *Item) hidden() bool {
+	return it.Measured && (it.SizeKB == 0 || it.SizeKB < it.MinSizeKB)
+}
+
+func (s *Scanner) markApplied(rows []chicle.Row) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.applied == nil {
+		s.applied = map[string]bool{}
+	}
+	for _, r := range rows {
+		s.applied[r.Key] = true
+	}
+}
+
+// send delivers rows and tracks what the picker has received. The picker asks
+// for the next update only after applying the last one, so an accepted send
+// proves the previous rows were applied, but not these.
+func (s *Scanner) send(updates chan<- []chicle.Row, rows []chicle.Row) {
+	updates <- rows
+	s.mu.Lock()
+	previous := s.accepted
+	s.accepted = map[string]bool{}
+	for _, r := range rows {
+		s.accepted[r.Key] = true
+	}
+	s.mu.Unlock()
+	var applied []chicle.Row
+	for key := range previous {
+		applied = append(applied, chicle.Row{Key: key})
+	}
+	s.markApplied(applied)
+}
+
+// remember records what you could see: ticked rows as true, unticked as false.
+// Rows hidden for being empty, and rows the picker never received, keep their
+// earlier choice, as an absent row says nothing about what you wanted.
+func (s *Scanner) remember(ticked map[string]bool, m Memory) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range s.items {
+		switch {
+		case ticked[it.Key]:
+			m[it.location()] = true
+		case s.applied[it.Key] && !it.hidden():
+			m[it.location()] = false
+		}
+	}
 }
 
 func (s *Scanner) sortItems() {
@@ -75,7 +130,7 @@ func (s *Scanner) start() <-chan []chicle.Row {
 		s.sortItems()
 		pending := append([]*Item(nil), s.items...)
 		s.mu.Unlock()
-		updates <- s.snapshot()
+		s.send(updates, s.snapshot())
 
 		work := make(chan *Item)
 		var wg sync.WaitGroup
@@ -89,7 +144,7 @@ func (s *Scanner) start() <-chan []chicle.Row {
 					it.SizeKB, it.Measured = kb, true
 					rows := s.rows()
 					s.mu.Unlock()
-					updates <- rows
+					s.send(updates, rows)
 				}
 			}()
 		}
@@ -106,7 +161,7 @@ func (s *Scanner) start() <-chan []chicle.Row {
 		rows := s.rows()
 		s.mu.Unlock()
 		s.done.Store(true)
-		updates <- rows
+		s.send(updates, rows)
 	}()
 	return updates
 }

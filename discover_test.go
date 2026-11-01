@@ -49,6 +49,9 @@ func TestDiscoverRailsLogsLeavesProductionAlone(t *testing.T) {
 	if it == nil || !it.Ticked {
 		t.Fatal("rails-logs should exist and start ticked")
 	}
+	if got := it.location(); got != root+"/**/log" {
+		t.Errorf("location must not depend on which logs exist: %q", got)
+	}
 	if len(it.Truncate) != 3 || len(it.RemovePaths) != 1 || it.RemovePaths[0] != root+"/app/log/development.log.0" {
 		t.Errorf("truncate=%v remove=%v", it.Truncate, it.RemovePaths)
 	}
