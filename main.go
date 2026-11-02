@@ -40,7 +40,8 @@ func run() error {
 		starting = Memory{}
 	}
 
-	items := catalog(home, systemOutput)
+	skips := parseSkips(skipFile, home)
+	items := withoutSkipped(catalog(home, systemOutput), skips)
 	starting.apply(items)
 	scanner := newScanner(items, func() []*Item {
 		var claimed []string
@@ -50,6 +51,7 @@ func run() error {
 		found := discover(filepath.Join(home, "c"))
 		found = append(found, largeEntries(filepath.Join(home, "Library/Caches"), claimed)...)
 		found = append(found, largeEntries(filepath.Join(home, ".cache"), claimed)...)
+		found = withoutSkipped(found, skips)
 		starting.apply(found)
 		return found
 	})

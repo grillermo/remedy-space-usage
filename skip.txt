@@ -1,0 +1,4 @@
+# Folders remedy-space-usage never offers to clean: the path, then " # " and why.
+# ~ is your home folder. Anything inside a listed folder is kept too, and so is
+# any row that would clean a folder containing it.
+~/.cache/huggingface # needed to use phonon voices
