@@ -86,7 +86,7 @@ func pick(scanner *Scanner) ([]*Item, map[string]bool, error) {
 	initial := scanner.snapshot()
 	scanner.markApplied(initial)
 	program := tea.NewProgram(chicle.New(chicle.Config{
-		Title:       "Free up space: enter ticks, tab reaches the buttons, ctrl+d cleans (once the scan ends)",
+		Title:       "Free up space: space ticks, / filters, ctrl+d cleans (once the scan ends)",
 		MultiSelect: true,
 		NoCycle:     true,
 		Columns:     []chicle.Column{{Title: "Size", Width: 9}, {Title: "Item", Width: 38}, {Title: "Where"}},
