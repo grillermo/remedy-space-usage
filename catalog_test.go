@@ -108,3 +108,31 @@ func TestNeutralDirIsWritable(t *testing.T) {
 	f.Close()
 	os.Remove(f.Name())
 }
+
+func TestOlderVersionsKeepsTheNewest(t *testing.T) {
+	dir := t.TempDir()
+	for _, v := range []string{"2.1.9", "2.1.325", "2.1.326", "notes"} {
+		touch(t, dir+"/"+v+"/a")
+	}
+	got := olderVersions(dir)
+	if len(got) != 2 || got[0] != dir+"/2.1.9" || got[1] != dir+"/2.1.325" {
+		t.Errorf("got %v", got)
+	}
+	if olderVersions(dir+"/2.1.326") != nil {
+		t.Error("a folder with no versions offers nothing")
+	}
+}
+
+func TestCatalogOffersOldClaudeDesktopVersions(t *testing.T) {
+	home := t.TempDir()
+	base := home + "/Library/Application Support/Claude/claude-code"
+	touch(t, base+"/2.1.325/a")
+	touch(t, base+"/2.1.326/a")
+	it := find(catalog(home, fakeOutput()), "claude-desktop-cli")
+	if it == nil || it.App != "Claude" || len(it.RemovePaths) != 1 || it.RemovePaths[0] != base+"/2.1.325" {
+		t.Fatalf("got %+v", it)
+	}
+	if it.location() != base {
+		t.Errorf("location must not depend on the version: %q", it.location())
+	}
+}

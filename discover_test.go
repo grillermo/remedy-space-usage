@@ -70,3 +70,27 @@ func TestLargeEntriesSkipsClaimedPaths(t *testing.T) {
 		t.Errorf("got %+v", it)
 	}
 }
+
+func TestDiscoverXcodeProjectBuildFolders(t *testing.T) {
+	root := t.TempDir()
+	touch(t, root+"/mac/Mac.xcodeproj/project.pbxproj")
+	touch(t, root+"/mac/.build-run/DerivedData/a")
+	touch(t, root+"/mac/build/DerivedData/a")
+	touch(t, root+"/ios/App.xcodeproj/project.pbxproj")
+	touch(t, root+"/ios/build/dsyms/a")
+	touch(t, root+"/plain/build/DerivedData/a")
+	touch(t, root+"/plain/.build-run/a")
+
+	items := discover(root)
+	for _, key := range []string{"artifact:" + root + "/mac/.build-run", "artifact:" + root + "/mac/build/DerivedData"} {
+		it := find(items, key)
+		if it == nil {
+			t.Errorf("missing %s", key)
+		} else if it.InUseRoot != root+"/mac" {
+			t.Errorf("%s InUseRoot = %q", key, it.InUseRoot)
+		}
+	}
+	if len(items) != 2 {
+		t.Errorf("got %d items, want 2 (dSYMs and folders without an Xcode project stay)", len(items))
+	}
+}

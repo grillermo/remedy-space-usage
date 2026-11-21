@@ -16,17 +16,27 @@ var (
 	rotatedLog = regexp.MustCompile(`^(development|test|server_dev)\.log\.[0-9]+$`)
 	// A folder only counts as an artifact next to its project's marker, so a
 	// folder that merely happens to be called "target" is never offered.
-	artifactMarkers = map[string]string{
-		"target":       "Cargo.toml",
-		".build":       "Package.swift",
-		".build-run":   "Package.swift",
-		"node_modules": "package.json",
+	// Markers are globs, so an Xcode project counts by its *.xcodeproj.
+	artifactMarkers = map[string][]string{
+		"target":       {"Cargo.toml"},
+		".build":       {"Package.swift"},
+		".build-run":   {"Package.swift", "*.xcodeproj"},
+		"node_modules": {"package.json"},
 	}
 )
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func hasMarker(dir string, globs []string) bool {
+	for _, g := range globs {
+		if m, _ := filepath.Glob(filepath.Join(dir, g)); len(m) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func artifactItem(path, project string) *Item {
@@ -72,7 +82,13 @@ func discover(root string) []*Item {
 			collectLogs(path, logs)
 			return filepath.SkipDir
 		}
-		if marker, ok := artifactMarkers[name]; ok && exists(filepath.Join(parent, marker)) {
+		// xcodebuild -derivedDataPath build/DerivedData, next to the .xcodeproj. Only
+		// DerivedData itself: build/ can hold things that aren't rebuilt, like dSYMs.
+		if name == "DerivedData" && filepath.Base(parent) == "build" && hasMarker(filepath.Dir(parent), []string{"*.xcodeproj"}) {
+			items = append(items, artifactItem(path, filepath.Dir(parent)))
+			return filepath.SkipDir
+		}
+		if markers, ok := artifactMarkers[name]; ok && hasMarker(parent, markers) {
 			items = append(items, artifactItem(path, parent))
 			return filepath.SkipDir
 		}

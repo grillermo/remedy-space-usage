@@ -4,6 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -50,6 +53,7 @@ func catalog(home string, output outputFunc) []*Item {
 			h("Library/Application Support/Slack/Service Worker/CacheStorage"),
 			h("Library/Caches/com.tinyspeck.slackmacgap.ShipIt")),
 		dirCache("npm", "npm cache", "", true, h(".npm")),
+		dirCache("gradle", "Gradle caches", "", true, h(".gradle/caches"), h(".gradle/wrapper/dists")),
 		dirCache("playwright", "Playwright browsers", "", true, h("Library/Caches/ms-playwright")),
 		dirCache("trash", "Empty the Trash", "", false, h(".Trash")),
 		dirCache("user-logs", "User logs and crash reports", "", true, h("Library/Logs")),
@@ -65,6 +69,11 @@ func catalog(home string, output outputFunc) []*Item {
 		item.Detail = filepath.Join(home, "Library/Containers/*/Data/Library/Caches")
 		item.Location = item.Detail
 		items = append(items, item)
+	}
+	if old := olderVersions(h("Library/Application Support/Claude/claude-code")); len(old) > 0 {
+		items = append(items, &Item{Key: "claude-desktop-cli", Section: sectionCaches,
+			Label: "Claude desktop: old bundled Claude Code versions", Detail: filepath.Dir(old[0]), Ticked: true,
+			Location: filepath.Dir(old[0]), SizePaths: old, RemovePaths: old, App: "Claude"})
 	}
 	tmp := filepath.Clean(os.TempDir())
 	items = append(items, &Item{Key: "temp-files", Section: sectionCaches, Label: "Temp files older than 7 days",
@@ -82,6 +91,7 @@ func catalog(home string, output outputFunc) []*Item {
 			SizePaths: []string{path}, Commands: commands})
 	}
 	tool("uv", "uv cache", "uv cache clean", []string{"uv", "cache", "dir"}, []string{"uv", "cache", "clean"})
+	tool("pip", "pip cache", "pip3 cache purge", []string{"pip3", "cache", "dir"}, []string{"pip3", "cache", "purge"})
 	tool("go-build", "Go build cache", "go clean -cache", []string{"go", "env", "GOCACHE"}, []string{"go", "clean", "-cache"})
 	tool("go-mod", "Go module cache", "go clean -modcache", []string{"go", "env", "GOMODCACHE"}, []string{"go", "clean", "-modcache"})
 	tool("pnpm", "pnpm store (unused packages)", "pnpm store prune", []string{"pnpm", "store", "path"}, []string{"pnpm", "store", "prune"})
@@ -89,6 +99,44 @@ func catalog(home string, output outputFunc) []*Item {
 		[]string{"brew", "autoremove"}, []string{"brew", "cleanup", "--prune=all", "-s"})
 
 	return items
+}
+
+// olderVersions lists every version folder in dir except the newest one, which
+// the app is using. The desktop app downloads a new one per update and keeps the old.
+func olderVersions(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var versions []string
+	for _, e := range entries {
+		if e.IsDir() && versionDir.MatchString(e.Name()) {
+			versions = append(versions, e.Name())
+		}
+	}
+	if len(versions) < 2 {
+		return nil
+	}
+	sort.Slice(versions, func(a, b int) bool { return versionLess(versions[a], versions[b]) })
+	var old []string
+	for _, v := range versions[:len(versions)-1] {
+		old = append(old, filepath.Join(dir, v))
+	}
+	return old
+}
+
+var versionDir = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+func versionLess(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		na, _ := strconv.Atoi(pa[i])
+		nb, _ := strconv.Atoi(pb[i])
+		if na != nb {
+			return na < nb
+		}
+	}
+	return len(pa) < len(pb)
 }
 
 // containerCaches lists each sandboxed app's cache folder, except Safari's,
